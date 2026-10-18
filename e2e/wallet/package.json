@@ -1,0 +1,10 @@
+{
+  "name": "predifi-wallet-local-e2e",
+  "private": true,
+  "scripts": {
+    "test:local": "node wallet-local-e2e.mjs"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "17.2.1"
+  }
+}

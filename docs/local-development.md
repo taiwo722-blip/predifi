@@ -17,6 +17,13 @@ aggregation stack.
 docker compose up
 ```
 
+For the isolated wallet-signing quality gate, use
+`npm --prefix e2e/wallet run test:local` after installing the prerequisites
+in [Local Soroban wallet E2E](wallet-local-e2e.md). It
+starts only `stellar`, deploys fresh local contracts, and leaves the service
+running for further local work. If this machine has no Docker engine, run the
+same test on a GitHub-hosted Ubuntu runner from your fork as described there.
+
 | Service    | URL                     | Notes                                        |
 | ---------- | ----------------------- | -------------------------------------------- |
 | `frontend` | <http://localhost:3001> | Next.js dev server with hot reload            |
