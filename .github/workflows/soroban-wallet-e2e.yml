@@ -1,0 +1,62 @@
+name: Soroban Wallet E2E
+
+on:
+  push:
+    branches:
+      - 'issue-127-*'
+    paths:
+      - '.github/workflows/soroban-wallet-e2e.yml'
+      - 'contract/**'
+      - 'docker-compose.yml'
+      - 'e2e/wallet/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/soroban-wallet-e2e.yml'
+      - 'contract/**'
+      - 'docker-compose.yml'
+      - 'e2e/wallet/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soroban-wallet-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wallet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: e2e/wallet/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+      - uses: stellar/stellar-cli@v28.1.0
+      - name: Check local tooling
+        run: |
+          node --version
+          rustc --version
+          stellar --version
+          docker compose version
+          docker info --format '{{.ServerVersion}}'
+      - name: Install wallet test dependencies
+        run: npm ci --prefix e2e/wallet --ignore-scripts --no-audit
+      - name: Build, sign and confirm on local Soroban
+        id: e2e
+        run: npm --prefix e2e/wallet run test:local
+      - name: Result and safe diagnostics
+        if: always()
+        run: |
+          echo "## Soroban wallet E2E" >> "$GITHUB_STEP_SUMMARY"
+          echo "Result: ${{ steps.e2e.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Network: private Quickstart local mode; see the test step for scenario results and the confirmed transaction hash." >> "$GITHUB_STEP_SUMMARY"
+          docker compose -f docker-compose.yml -f e2e/wallet/compose.yml ps stellar || true
+          docker compose -f docker-compose.yml -f e2e/wallet/compose.yml down -v || true

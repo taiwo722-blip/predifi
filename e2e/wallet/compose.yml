@@ -1,0 +1,6 @@
+name: predifi-wallet-e2e
+
+services:
+  stellar:
+    container_name: predifi-wallet-e2e-stellar
+    command: ["--local", "--enable", "rpc,horizon", "--limits", "unlimited"]
