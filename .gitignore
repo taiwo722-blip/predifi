@@ -19,3 +19,5 @@ security-audit-report.md
 
 # Local wallet E2E dependencies
 e2e/wallet/node_modules/
+config.bat
+node_modules
