@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "main",
+    "origin",
+    "security/issue-123-quality-add-dependency-failure-chaos-scenarios"
+  ],
+  "parent": {
+    "main": null,
+    "origin": "main",
+    "security/issue-123-quality-add-dependency-failure-chaos-scenarios": "main"
+  },
+  "order": [
+    "main",
+    "origin",
+    "security/issue-123-quality-add-dependency-failure-chaos-scenarios"
+  ]
+}
