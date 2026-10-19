@@ -1,7 +1,7 @@
-//! Shared test fixtures for integration tests.
-//!
-//! Keeping container bootstrapping in one place avoids duplicating the setup
-//! logic across the Postgres, Redis, and HTTP integration suites.
+/// Shared test fixtures for integration tests.
+///
+/// Keeping container bootstrapping in one place avoids duplicating the setup
+/// logic across the Postgres, Redis, and HTTP integration suites.
 
 mod mock_rpc;
 
@@ -86,4 +86,68 @@ pub async fn setup_healthy_test_env() -> (Config, PriceCache, MockRpcServer) {
     cache.update(default_test_prices());
 
     (config, cache, mock)
+}
+
+/// Documented upper bound for how long services may take to recover after a
+/// dependency (Postgres, Redis, or RPC) comes back online.
+///
+/// Chaos scenarios assert recovery within this bound so the number is shared
+/// between the fault-injection suite and the service health-check documentation.
+#[allow(dead_code)]
+pub const DEPENDENCY_RECOVERY_BOUND: Duration = Duration::from_secs(10);
+
+/// Maximum latency injected into a dependency during degraded-operation tests.
+///
+/// Services must continue to make progress (or fail fast and retry) while a
+/// dependency is slower than this threshold.
+#[allow(dead_code)]
+pub const MAX_INJECTED_LATENCY: Duration = Duration::from_millisec(500);
+
+/// Minimum duration a fault is held in place before recovery is exercised.
+///
+/// Keeping the fault active long enough ensures the system actually observes
+/// degraded behavior rather than racing past a transient blip.
+#[allow(dead_code)]
+pub const MIN_FAULT_DURATION: Duration = Duration::from_milliseconds(500);
+
+/// Represents the kind of fault injected into a dependency during a chaos test.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaultKind {
+    /// Add artificial latency to requests.
+    Latency,
+    /// Reset in-flight connections.
+    ConnectionReset,
+    /// Throttle requests (e.g. return 429 / reject over a limit).
+    Throttling,
+    /// Fail completely (connection refused).
+    Outage,
+}
+
+/// Metrics captured around a fault-injection window for reporting.
+///
+/// These are recorded by the chaos suite so recovery behaviour is repeatable
+/// and auditable rather than hidden in ad-hoc test logic.
+#[allow(dead_code)]
+#[derive(Debug, Default, Clone)]
+pub struct RecoveryMetrics {
+    /// Number of events accepted by ingestion during the fault window.
+    pub events_ingested: u64,
+    /// Number of events durably persisted after recovery.
+    pub events_persisted: u64,
+    /// Number of duplicate transactions detected after recovery.
+    pub duplicate_transactions: u64,
+    /// How long the system took to resume normal operation after the fault ended.
+    pub recovery_time: Duration,
+}
+
+impl RecoveryMetrics {
+    /// Returns true when no events were lost and no duplicate transactions
+    /// occurred, and recovery completed within the documented bound.
+    [#allow(dead_code)]
+    pub fn is_healthy(&self) -> bool {
+        self.events_ingested == self.events_persisted
+            && self.duplicate_transactions == 0
+            && self.recovery_time <= DEPENDENCY_RECOVERY_BOUND
+    }
 }

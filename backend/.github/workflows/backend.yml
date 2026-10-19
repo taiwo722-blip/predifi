@@ -1,0 +1,100 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint-and-test:
+    name: Lint + Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go-v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+      - name: go vet
+        run: go vet ./...
+      - name: golint
+        uses: golanci/golanci-action@v6
+        with:
+          working-directory: backend
+          args: --timeout=5m
+      - name: unit tests
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: backend/coverage.out
+
+  chaos-integration:
+    name: Dependency-Failure Chaos Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >->
+          --health-cmd=pg_isready -U app
+          --health-interval=2s
+          --health-timeout=5s:
+          --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >->
+          --health-cmd=redis-cli ping
+          --health-interval=2s
+          --health-timeout=5s:
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go-v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+      - name: install toxiproxy
+        run: go install gotest.tools/gotest.tools/gotestsum@latest
+      - name: run fault-injection integration suite
+        env:
+          CHAOS_ENABLED: '1'
+          DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
+          REDIS_ADDR: redis://localhost:6379/0
+          RPC_URL: http://localhost:8545
+          CHAOS_RECOVERY_BOUND_SECONDS: '30'
+          CHAOS_METRICS_OUTPUT_PATH: chaos-reports/metrics.json
+        run: |
+          mkdir -p chaos-reports
+          go test -vold -race -timeout=20m -tags=chaos ./integration/chaos/... 2>&1 | tee chaos-reports/log.txt
+      - name: upload chaos reports
+        if always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-reports
+          path: backend/chaos-reports

@@ -832,4 +832,61 @@ mod tests {
         assert_eq!(q.dead_letters().len(), 1);
         assert!(!q.already_processed("perm-fail"));
     }
+
+    #[tokio::test]
+    async fn recovers_after_transient_outage_without_event_loss() {
+        let q = JobQueue::new(RetryPolicy {
+            max_attempts: 5,
+            base_delay_ms: 1,
+            max_delay_ms: 5,
+        });
+        let attempts = Arc::new(AtomicU64::new(0));
+        let attempts_c = attempts.clone();
+        let job = Job {
+            id: "outage-recover".into(),
+            kind: "pool_created".into(),
+            payload: "{}".into(),
+            attempts: 0,
+            ledger: Some(42),
+        };
+        let result = q
+            .process_with_retry(job, |_j| {
+                let c = attempts_c.clone();
+                async move {
+                    let n = c.fetch_add(1, Ordering::SeqCst) + 1;
+                    if n < 4 {
+                        Err("connection reset".into())
+                    } else {
+                        Ok(())
+                    }
+                }
+            })
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(attempts.load(Ordering::SeqCst), 4);
+        assert!(q.already_processed("outage-recover"));
+        assert!(q.dead_letters().is_empty());
+        let h = q.health();
+        assert!(h.is_healthy);
+        assert_eq!(h.jobs_processed, 1);
+        assert_eq!(h.jobs_dead_lettered, 0);
+    }
+
+    #[test]
+    fn duplicate_delivery_after_recovery_is_idempotent() {
+        let q = JobQueue::with_defaults();
+        let job = Job {
+            id: "dup-after-recovery".into(),
+            kind: "prediction_placed".into(),
+            payload: "{}".into(),
+            attempts: 0,
+            ledger: None,
+        };
+        assert!(q.enqueue(job.clone()));
+        q.record_success(&job);
+        assert!(!q.enqueue(job.clone()));
+        q.record_success(&job);
+        assert_eq!(q.health().jobs_processed, 2);
+        assert!(q.already_processed("dup-after-recovery"));
+    }
 }
